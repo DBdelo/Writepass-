@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 import { countAnswerWords, getModelAnswer } from "./model-answers";
+import writingProblems from "../public/data/writing-problems.json";
 
 type WordCount = {
   min: number;
@@ -54,6 +55,8 @@ type WritingProblem = {
 type SheetKind = "problem" | "answer" | "model";
 
 type PdfState = Partial<Record<SheetKind, string>>;
+
+const writingProblemData = writingProblems as unknown as WritingProblem[];
 
 const gradeOrder = ["3級", "準2級", "2級", "準1級"] as const;
 const sheetLabels: Record<SheetKind, string> = {
@@ -455,8 +458,22 @@ function sheetElementFor(
 }
 
 export default function Home() {
-  const [problems, setProblems] = useState<WritingProblem[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const problems = useMemo(
+    () => writingProblemData.toSorted(sortProblems),
+    [],
+  );
+  const [selectedId, setSelectedId] = useState(() => {
+    const sorted = writingProblemData.toSorted(sortProblems);
+    const initial =
+      sorted.find(
+        (problem) =>
+          problem.grade === "2級" &&
+          problem.year === 2025 &&
+          problem.session === 3 &&
+          problem.type === "英作文",
+      ) ?? latestProblemFor(sorted);
+    return initial?.id ?? "";
+  });
   const [activeSheet, setActiveSheet] = useState<SheetKind>("problem");
   const [pdfUrls, setPdfUrls] = useState<PdfState>({});
   const [isGenerating, setIsGenerating] = useState(false);
@@ -465,34 +482,6 @@ export default function Home() {
   const answerRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
   const pdfUrlsRef = useRef<PdfState>({});
-
-  useEffect(() => {
-    let mounted = true;
-
-    fetch("/data/writing-problems.json")
-      .then((response) => response.json())
-      .then((items) => {
-        if (!mounted) return;
-        const sorted = (items as WritingProblem[]).toSorted(sortProblems);
-        const initial =
-          sorted.find(
-            (problem) =>
-              problem.grade === "2級" &&
-              problem.year === 2025 &&
-              problem.session === 3 &&
-              problem.type === "英作文",
-          ) ?? latestProblemFor(sorted);
-        setProblems(sorted);
-        setSelectedId(initial?.id ?? "");
-      })
-      .catch(() => {
-        if (mounted) setError("データを読み込めませんでした。");
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     const sheet = new URLSearchParams(window.location.search).get("sheet");
