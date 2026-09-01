@@ -3,6 +3,7 @@
 import { PDFDocument } from "pdf-lib";
 import html2canvas from "html2canvas";
 import {
+  BookOpenCheck,
   Download,
   Eye,
   FileDown,
@@ -19,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { countAnswerWords, getModelAnswer } from "./model-answers";
 
 type WordCount = {
   min: number;
@@ -49,17 +51,15 @@ type WritingProblem = {
   sourceText?: string | null;
 };
 
-type SheetKind = "problem" | "answer";
+type SheetKind = "problem" | "answer" | "model";
 
-type PdfState = {
-  problem?: string;
-  answer?: string;
-};
+type PdfState = Partial<Record<SheetKind, string>>;
 
 const gradeOrder = ["3級", "準2級", "2級", "準1級"] as const;
 const sheetLabels: Record<SheetKind, string> = {
   problem: "問題用紙",
   answer: "解答用紙",
+  model: "模範解答",
 };
 
 const gradeDisplay: Record<WritingProblem["grade"], string> = {
@@ -340,6 +340,59 @@ function AnswerSheet({
   );
 }
 
+function ModelAnswerSheet({
+  problem,
+  sheetRef,
+}: {
+  problem: WritingProblem;
+  sheetRef?: RefObject<HTMLDivElement | null>;
+}) {
+  const answer = getModelAnswer(problem);
+  const answerWordCount = countAnswerWords(answer);
+
+  return (
+    <div ref={sheetRef} className="pdf-paper model-paper">
+      <div className="model-side-rule" />
+      <main className="model-content">
+        <p className="model-kicker">Reference Answer</p>
+        <h1>ライティング模範解答</h1>
+
+        <div className="model-meta">
+          <span>{problem.grade}</span>
+          <span>{problem.year}年度</span>
+          <span>第{problem.session}回</span>
+          <span>
+            問題{problem.questionNumber} {problem.type}
+          </span>
+        </div>
+
+        <section className="model-prompt">
+          <h2>{problem.type === "英文要約" ? "TASK" : problemTitle(problem)}</h2>
+          <p>
+            {problem.topic ??
+              problem.question ??
+              problem.questionToAnswer ??
+              (problem.type === "英文要約"
+                ? "Read the passage and summarize it in English."
+                : "Write a reply to the e-mail.")}
+          </p>
+        </section>
+
+        <section className="model-answer-block">
+          <h2>{problem.type === "英文要約" ? "SUMMARY" : "SAMPLE ANSWER"}</h2>
+          <p>{answer}</p>
+        </section>
+
+        <footer className="model-footer">
+          <span>{answerWordCount} words</span>
+          {problem.wordCount ? <span>目安: {wordRange(problem)}</span> : null}
+          <span>練習用の参考答案です</span>
+        </footer>
+      </main>
+    </div>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -394,6 +447,13 @@ function makeFileName(problem: WritingProblem, kind: SheetKind) {
   return `eiken-${problem.year}-${problem.session}-${gradeSlug[problem.grade]}-q${problem.questionNumber}-${kind}.pdf`;
 }
 
+function sheetElementFor(
+  kind: SheetKind,
+  refs: Record<SheetKind, RefObject<HTMLDivElement | null>>,
+) {
+  return refs[kind].current;
+}
+
 export default function Home() {
   const [problems, setProblems] = useState<WritingProblem[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -403,6 +463,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const problemRef = useRef<HTMLDivElement>(null);
   const answerRef = useRef<HTMLDivElement>(null);
+  const modelRef = useRef<HTMLDivElement>(null);
   const pdfUrlsRef = useRef<PdfState>({});
 
   useEffect(() => {
@@ -434,8 +495,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("sheet") === "answer") {
-      setActiveSheet("answer");
+    const sheet = new URLSearchParams(window.location.search).get("sheet");
+    if (sheet === "answer" || sheet === "model") {
+      setActiveSheet(sheet);
     }
   }, []);
 
@@ -552,7 +614,11 @@ export default function Home() {
       const cached = pdfUrls[kind];
       if (cached) return cached;
 
-      const element = kind === "problem" ? problemRef.current : answerRef.current;
+      const element = sheetElementFor(kind, {
+        problem: problemRef,
+        answer: answerRef,
+        model: modelRef,
+      });
       if (!element || !selected) return "";
 
       setError("");
@@ -679,7 +745,7 @@ export default function Home() {
         ) : null}
 
         <div className="sheet-switch" role="tablist" aria-label="表示用紙">
-          {(["problem", "answer"] as SheetKind[]).map((kind) => (
+          {(["problem", "answer", "model"] as SheetKind[]).map((kind) => (
             <button
               key={kind}
               type="button"
@@ -702,6 +768,10 @@ export default function Home() {
           <button type="button" onClick={() => void downloadPdf("answer")}>
             <Download size={17} />
             解答用紙PDF
+          </button>
+          <button type="button" onClick={() => void downloadPdf("model")}>
+            <BookOpenCheck size={17} />
+            模範解答PDF
           </button>
         </div>
 
@@ -732,8 +802,10 @@ export default function Home() {
             <div className="paper-preview">
               {activeSheet === "problem" ? (
                 <ProblemSheet problem={selected} />
-              ) : (
+              ) : activeSheet === "answer" ? (
                 <AnswerSheet problem={selected} />
+              ) : (
+                <ModelAnswerSheet problem={selected} />
               )}
             </div>
           ) : null}
@@ -752,6 +824,7 @@ export default function Home() {
         <div className="render-cache" aria-hidden="true">
           <ProblemSheet problem={selected} sheetRef={problemRef} />
           <AnswerSheet problem={selected} sheetRef={answerRef} />
+          <ModelAnswerSheet problem={selected} sheetRef={modelRef} />
         </div>
       ) : null}
     </main>
