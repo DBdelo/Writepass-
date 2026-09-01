@@ -31,6 +31,8 @@ yarn-error.log*
 
 # deployment and generated files
 .vercel
+AGENTS.md
+CLAUDE.md
 next-env.d.ts
 tsconfig.tsbuildinfo
 /dist/
